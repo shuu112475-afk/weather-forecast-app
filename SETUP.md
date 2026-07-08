@@ -45,3 +45,18 @@ OpenWeatherMap API と連携した天気予報 Web アプリ。
 
 ### 7. 最終確認
 - デプロイ済みURLにアクセスし、実機で都市検索・現在地・カレンダー切り替え・気温/天気/湿度/降水確率表示を確認
+
+## 完成物
+- リポジトリ: https://github.com/shuu112475-afk/weather-forecast-app
+- 本番URL: https://weather-forecast-app-blond.vercel.app
+
+## トラブルシューティングメモ
+- Vercel の Node.js(既定の Fluid Compute/AWS Lambda)ランタイムから
+  `api.openweathermap.org` への接続がタイムアウトする事象が発生した
+  (GitHub 等の他ホストへは到達可能で、OpenWeatherMap のみ不通だった)。
+  `src/app/api/weather/route.ts` で `export const runtime = "edge";` を指定し、
+  Edge Runtime 経由のネットワーク経路に切り替えることで解消した。
+- Vercel の新規プロジェクトはデフォルトで Deployment Protection(SSO認証)
+  が有効になっており、`*.vercel.app` の全ドメインが未ログインユーザーに
+  対して認証を要求していた。Vercel API 経由で `ssoProtection` を解除し、
+  誰でもアクセスできる状態にした。
