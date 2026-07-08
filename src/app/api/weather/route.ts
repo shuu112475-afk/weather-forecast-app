@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Vercel's default Node.js (AWS Lambda) egress IPs time out when connecting
+// to OpenWeatherMap. The edge runtime uses a different network path that
+// does not hit this block.
+export const runtime = "edge";
+
 const BASE_URL = "https://api.openweathermap.org/data/2.5";
+
+async function fetchJson<T>(url: string): Promise<{ ok: boolean; status: number; body: T }> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  return { ok: res.ok, status: res.status, body: await res.json() };
+}
 
 type OwmWeather = {
   id: number;
@@ -78,31 +88,29 @@ export async function GET(request: NextRequest) {
 
   try {
     const [currentRes, forecastRes] = await Promise.all([
-      fetch(
+      fetchJson<OwmCurrentResponse & { message?: string }>(
         `${BASE_URL}/weather?${locationQuery}&units=metric&lang=ja&appid=${apiKey}`
       ),
-      fetch(
+      fetchJson<OwmForecastResponse & { message?: string }>(
         `${BASE_URL}/forecast?${locationQuery}&units=metric&lang=ja&appid=${apiKey}`
       ),
     ]);
 
     if (!currentRes.ok) {
-      const body = await currentRes.json().catch(() => null);
       return NextResponse.json(
-        { error: body?.message ?? "都市が見つかりませんでした。" },
+        { error: currentRes.body?.message ?? "都市が見つかりませんでした。" },
         { status: currentRes.status === 404 ? 404 : 502 }
       );
     }
     if (!forecastRes.ok) {
-      const body = await forecastRes.json().catch(() => null);
       return NextResponse.json(
-        { error: body?.message ?? "予報の取得に失敗しました。" },
+        { error: forecastRes.body?.message ?? "予報の取得に失敗しました。" },
         { status: forecastRes.status === 404 ? 404 : 502 }
       );
     }
 
-    const current: OwmCurrentResponse = await currentRes.json();
-    const forecast: OwmForecastResponse = await forecastRes.json();
+    const current = currentRes.body;
+    const forecast = forecastRes.body;
 
     const byDate = new Map<string, OwmForecastEntry[]>();
     for (const entry of forecast.list) {
@@ -150,7 +158,8 @@ export async function GET(request: NextRequest) {
     };
 
     return NextResponse.json(response);
-  } catch {
+  } catch (e) {
+    console.error("weather api error", e);
     return NextResponse.json(
       { error: "天気情報の取得中にエラーが発生しました。" },
       { status: 500 }
