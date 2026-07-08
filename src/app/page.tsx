@@ -3,7 +3,12 @@
 import { useEffect, useState, type SubmitEvent } from "react";
 import Image from "next/image";
 import Calendar from "./components/Calendar";
+import FavoritesBar from "./components/FavoritesBar";
+import RainAlert from "./components/RainAlert";
 import type { WeatherApiResponse } from "./api/weather/route";
+import { queryToId, useFavorites, type FavoriteQuery } from "./lib/favorites";
+import { getClothingAdvice } from "./lib/clothingAdvice";
+import { isRainyWeather } from "./lib/rain";
 
 const DEFAULT_CITY = "Tokyo";
 
@@ -17,6 +22,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const { favorites, isFavorite, toggleFavorite, removeFavorite } = useFavorites();
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +60,16 @@ export default function Home() {
     setQuery({ city: cityInput.trim() });
   }
 
+  function handleSelectFavorite(favoriteQuery: FavoriteQuery) {
+    if ("city" in favoriteQuery) {
+      setCityInput(favoriteQuery.city);
+      setQuery({ city: favoriteQuery.city });
+    } else {
+      setCityInput("");
+      setQuery({ lat: favoriteQuery.lat, lon: favoriteQuery.lon });
+    }
+  }
+
   function handleUseLocation() {
     if (!navigator.geolocation) {
       setError("このブラウザは現在地取得に対応していません。");
@@ -75,6 +91,21 @@ export default function Home() {
 
   const selectedDay = data?.days.find((d) => d.date === selectedDate);
   const isToday = data?.days[0]?.date === selectedDate;
+
+  const effectiveWeatherMain = selectedDay
+    ? isToday
+      ? data?.current.weather.main
+      : selectedDay.weather.main
+    : undefined;
+  const effectiveTemp = selectedDay
+    ? isToday
+      ? data?.current.temp
+      : (selectedDay.tempMin + selectedDay.tempMax) / 2
+    : undefined;
+  const clothingAdvice =
+    selectedDay && effectiveTemp != null && effectiveWeatherMain != null
+      ? getClothingAdvice(effectiveTemp, isRainyWeather(selectedDay.pop, effectiveWeatherMain))
+      : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-white dark:from-neutral-950 dark:to-neutral-900 px-4 py-10">
@@ -112,6 +143,13 @@ export default function Home() {
           {locating ? "取得中..." : "現在地から取得する"}
         </button>
 
+        <FavoritesBar
+          favorites={favorites}
+          activeId={queryToId(query)}
+          onSelect={handleSelectFavorite}
+          onRemove={removeFavorite}
+        />
+
         {error && (
           <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-400">
             {error}
@@ -133,10 +171,32 @@ export default function Home() {
             />
 
             <div className="w-full max-w-sm rounded-xl bg-white/80 dark:bg-white/5 p-6 text-center shadow-sm ring-1 ring-black/5 dark:ring-white/10">
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                {data.cityName}
-                {data.country ? `, ${data.country}` : ""}
-              </p>
+              <div className="relative flex items-center justify-center">
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  {data.cityName}
+                  {data.country ? `, ${data.country}` : ""}
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleFavorite(
+                      query,
+                      `${data.cityName}${data.country ? `, ${data.country}` : ""}`
+                    )
+                  }
+                  aria-label={
+                    isFavorite(query) ? "お気に入りから削除" : "お気に入りに追加"
+                  }
+                  className={[
+                    "absolute right-0 text-xl leading-none",
+                    isFavorite(query)
+                      ? "text-amber-400"
+                      : "text-neutral-300 hover:text-amber-300 dark:text-neutral-600",
+                  ].join(" ")}
+                >
+                  {isFavorite(query) ? "★" : "☆"}
+                </button>
+              </div>
               <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
                 {selectedDate}
                 {isToday && "(今日)"}
@@ -185,6 +245,19 @@ export default function Home() {
                       </p>
                     </div>
                   </div>
+
+                  {effectiveWeatherMain && (
+                    <div className="mt-4">
+                      <RainAlert pop={selectedDay.pop} weatherMain={effectiveWeatherMain} />
+                    </div>
+                  )}
+
+                  {clothingAdvice && (
+                    <div className="mt-3 rounded-lg bg-amber-50 p-3 text-left text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                      <span className="mr-1">{clothingAdvice.emoji}</span>
+                      {clothingAdvice.text}
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="mt-4 text-sm text-neutral-500">
